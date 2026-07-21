@@ -1,6 +1,10 @@
+FROM maven:3.8.8-eclipse-temurin-17 AS build
+WORKDIR /workspace
+COPY . /workspace
+RUN mvn -B -DskipTests package
+
 FROM eclipse-temurin:17-jdk
 WORKDIR /app
-COPY . /app
-RUN ./mvnw -q -DskipTests package || true
+COPY --from=build /workspace/target/*.jar /app/app.jar
 EXPOSE 8080
-CMD ["java","-jar","target/*.jar"]
+ENTRYPOINT ["java","-jar","/app/app.jar"]
