@@ -1,6 +1,6 @@
 name: CI
 
-# CA-01 : déclenché à chaque push (toute branche) et sur chaque PR
+# CA-01 : déclenché à chaque push (toute branche) et sur chaque PR vers main
 on:
   push:
   pull_request:
@@ -16,6 +16,31 @@ jobs:
   build-test:
     name: Build, tests & couverture
     runs-on: ubuntu-latest
+
+    # Le contexte Spring (contextLoads, tests d'intégration JPA) a besoin d'une
+    # vraie base pour que Hibernate détermine son dialecte. En local, Docker
+    # Compose fournit postgres-platform ; en CI, ce service le remplace.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: platform
+          POSTGRES_DB: platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      # Mêmes identifiants que .env.dev, mais URL vers "localhost" car le
+      # service ci-dessus est exposé sur le runner, pas sur le réseau Docker.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/platform
+      SPRING_DATASOURCE_USERNAME: platform
+      SPRING_DATASOURCE_PASSWORD: platform
 
     steps:
       - name: Checkout du code
