@@ -1,6 +1,5 @@
 name: CI
 
-# CA-01 : déclenché à chaque push (toute branche) et sur chaque PR vers main
 on:
   push:
   pull_request:
@@ -17,31 +16,6 @@ jobs:
     name: Build, tests & couverture
     runs-on: ubuntu-latest
 
-    # Le contexte Spring (contextLoads, tests d'intégration JPA) a besoin d'une
-    # vraie base pour que Hibernate détermine son dialecte. En local, Docker
-    # Compose fournit postgres-platform ; en CI, ce service le remplace.
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: platform
-          POSTGRES_PASSWORD: platform
-          POSTGRES_DB: platform
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-
-    env:
-      # Mêmes identifiants que .env.dev, mais URL vers "localhost" car le
-      # service ci-dessus est exposé sur le runner, pas sur le réseau Docker.
-      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/platform
-      SPRING_DATASOURCE_USERNAME: platform
-      SPRING_DATASOURCE_PASSWORD: platform
-
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
@@ -56,17 +30,36 @@ jobs:
       - name: Rendre mvnw exécutable
         run: chmod +x mvnw
 
-      # On lance les tests séparément et on capture le résultat (continue-on-error)
-      # pour pouvoir quand même générer et publier le rapport JaCoCo même si des
-      # tests échouent (CA-01), puis faire échouer explicitement le job ensuite (CA-02).
-      - name: Compiler et lancer les tests (JUnit)
+      # Les tests Spring utilisent Testcontainers.
+      # Aucun service PostgreSQL GitHub Actions nécessaire :
+      # chaque test démarre son propre conteneur PostgreSQL temporaire.
+      - name: Compiler et lancer les tests
         id: tests
-        run: ./mvnw --batch-mode --no-transfer-progress test
+        run: ./mvnw --batch-mode --no-transfer-progress verify
         continue-on-error: true
 
-      - name: Générer le rapport de couverture JaCoCo
+      - name: Vérifier la génération du rapport JaCoCo
         if: always()
-        run: ./mvnw --batch-mode --no-transfer-progress jacoco:report
+        run: |
+          if [ -d target/site/jacoco ]; then
+            echo "Rapport JaCoCo généré."
+          else
+            echo "Rapport JaCoCo absent."
+          fi
+
+      - name: Afficher la couverture JaCoCo dans le résumé GitHub
+        if: always()
+        run: |
+          echo "## 📊 Couverture JaCoCo" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f target/site/jacoco/index.html ]; then
+            grep -o 'Total[^<]*' target/site/jacoco/index.html \
+              | sed 's/<[^>]*>//g' \
+              >> $GITHUB_STEP_SUMMARY || true
+          else
+            echo "Aucun rapport disponible." >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Publier le rapport JaCoCo en artefact
         if: always()
@@ -76,7 +69,7 @@ jobs:
           path: target/site/jacoco/
           retention-days: 14
 
-      - name: Publier les rapports de tests (Surefire) en artefact
+      - name: Publier les rapports de tests Surefire
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -84,10 +77,10 @@ jobs:
           path: target/surefire-reports/
           retention-days: 14
 
-      # CA-02 : si un test a échoué à l'étape précédente, le job échoue ici,
-      # ce qui fait apparaître le statut "failure" sur le commit / la PR.
+      # Les tests restent bloquants.
+      # La couverture, elle, est uniquement informative.
       - name: Échouer le job si des tests ont échoué
         if: steps.tests.outcome == 'failure'
         run: |
-          echo "Des tests unitaires ont échoué, voir le rapport Surefire en artefact."
+          echo "Des tests ont échoué. Voir les rapports Surefire en artefact."
           exit 1
