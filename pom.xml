@@ -114,6 +114,12 @@
 						<goals>
 							<goal>report</goal>
 						</goals>
+						<configuration>
+							<formats>
+								<format>HTML</format>
+								<format>XML</format>
+							</formats>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>

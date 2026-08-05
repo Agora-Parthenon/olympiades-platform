@@ -53,12 +53,29 @@ jobs:
           echo "## 📊 Couverture JaCoCo" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -f target/site/jacoco/index.html ]; then
-            grep -o 'Total[^<]*' target/site/jacoco/index.html \
-              | sed 's/<[^>]*>//g' \
-              >> $GITHUB_STEP_SUMMARY || true
+          if [ -f target/site/jacoco/jacoco.xml ]; then
+
+            INSTRUCTION=$(grep -o 'counter type="INSTRUCTION"[^>]\\+' target/site/jacoco/jacoco.xml \
+              | head -1 \
+              | grep -o 'covered="[0-9]*"' \
+              | cut -d'"' -f2)
+
+            MISSED=$(grep -o 'counter type="INSTRUCTION"[^>]\\+' target/site/jacoco/jacoco.xml \
+              | head -1 \
+              | grep -o 'missed="[0-9]*"' \
+              | cut -d'"' -f2)
+
+            TOTAL=$((INSTRUCTION + MISSED))
+
+            if [ "$TOTAL" -gt 0 ]; then
+              COVERAGE=$((100 * INSTRUCTION / TOTAL))
+              echo "✅ Instructions couvertes : ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "Aucune instruction mesurée." >> $GITHUB_STEP_SUMMARY
+            fi
+
           else
-            echo "Aucun rapport disponible." >> $GITHUB_STEP_SUMMARY
+            echo "❌ Rapport JaCoCo XML absent." >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Publier le rapport JaCoCo en artefact
