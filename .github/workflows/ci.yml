@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
+  checks: write
 
 jobs:
   build-test:
@@ -47,36 +49,16 @@ jobs:
             echo "Rapport JaCoCo absent."
           fi
 
-      - name: Afficher la couverture JaCoCo dans le résumé GitHub
+      - name: Publier la couverture JaCoCo dans le résumé et la PR
         if: always()
-        run: |
-          echo "## 📊 Couverture JaCoCo" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ -f target/site/jacoco/jacoco.xml ]; then
-
-            INSTRUCTION=$(grep -o 'counter type="INSTRUCTION"[^>]\\+' target/site/jacoco/jacoco.xml \
-              | head -1 \
-              | grep -o 'covered="[0-9]*"' \
-              | cut -d'"' -f2)
-
-            MISSED=$(grep -o 'counter type="INSTRUCTION"[^>]\\+' target/site/jacoco/jacoco.xml \
-              | head -1 \
-              | grep -o 'missed="[0-9]*"' \
-              | cut -d'"' -f2)
-
-            TOTAL=$((INSTRUCTION + MISSED))
-
-            if [ "$TOTAL" -gt 0 ]; then
-              COVERAGE=$((100 * INSTRUCTION / TOTAL))
-              echo "✅ Instructions couvertes : ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "Aucune instruction mesurée." >> $GITHUB_STEP_SUMMARY
-            fi
-
-          else
-            echo "❌ Rapport JaCoCo XML absent." >> $GITHUB_STEP_SUMMARY
-          fi
+        uses: madrapps/jacoco-report@v1.7.1
+        with:
+          paths: target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 0
+          min-coverage-changed-files: 0
+          title: 📊 Couverture JaCoCo
+          update-comment: true
 
       - name: Publier le rapport JaCoCo en artefact
         if: always()
