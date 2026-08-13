@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+      - develop
+      - staging
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  build-test:
+    name: Build, tests & couverture
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Installer JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Rendre mvnw exécutable
+        run: chmod +x mvnw
+
+      # Les tests Spring utilisent Testcontainers.
+      # Aucun service PostgreSQL GitHub Actions nécessaire :
+      # chaque test démarre son propre conteneur PostgreSQL temporaire.
+      - name: Compiler et lancer les tests
+        id: tests
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+        continue-on-error: true
+
+      - name: Vérifier la génération du rapport JaCoCo
+        if: always()
+        run: |
+          if [ -d target/site/jacoco ]; then
+            echo "Rapport JaCoCo généré."
+          else
+            echo "Rapport JaCoCo absent."
+          fi
+
+      - name: Publier la couverture JaCoCo dans le résumé et la PR
+        if: always()
+        uses: madrapps/jacoco-report@v1.7.1
+        with:
+          paths: target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 0
+          min-coverage-changed-files: 0
+          title: 📊 Couverture JaCoCo
+          update-comment: true
+
+      - name: Publier le rapport JaCoCo en artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 14
+
+      - name: Publier les rapports de tests Surefire
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 14
+
+      # Les tests restent bloquants.
+      # La couverture, elle, est uniquement informative.
+      - name: Échouer le job si des tests ont échoué
+        if: steps.tests.outcome == 'failure'
+        run: |
+          echo "Des tests ont échoué. Voir les rapports Surefire en artefact."
+          exit 1
