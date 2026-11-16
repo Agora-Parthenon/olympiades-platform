@@ -66,4 +66,23 @@ class ProfileControllerTest extends TestcontainersConfiguration {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.pseudo").value("Zoë l@mail"));
     }
+
+    @Test
+    void refusesAMalformedlyEncodedUsername() throws Exception {
+        mockMvc.perform(post("/profiles/me").header("X-User-Id", UUID.randomUUID()).header("X-User-Name", "%zz"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void dropsControlCharactersFromTheUsername() throws Exception {
+        mockMvc.perform(post("/profiles/me").header("X-User-Id", UUID.randomUUID()).header("X-User-Name", "ctrl%0A%00ok"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.pseudo").value("ctrlok"));
+    }
+
+    @Test
+    void refusesAUsernameMadeOnlyOfControlCharacters() throws Exception {
+        mockMvc.perform(post("/profiles/me").header("X-User-Id", UUID.randomUUID()).header("X-User-Name", "%0A%09"))
+                .andExpect(status().isBadRequest());
+    }
 }

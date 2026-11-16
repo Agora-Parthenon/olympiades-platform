@@ -40,7 +40,14 @@ public class ProfileController {
             @RequestHeader(ControllerPaths.USER_ID_HEADER) UUID userId,
             @RequestHeader(ControllerPaths.USER_NAME_HEADER) String username) {
         // The gateway URI-encodes the username so that any character fits in a header
-        String decodedUsername = URLDecoder.decode(username, StandardCharsets.UTF_8);
+        String decodedUsername;
+        try {
+            decodedUsername = URLDecoder.decode(username, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+        // No control character (line break, NUL...) in a name other players will read
+        decodedUsername = decodedUsername.replaceAll("\\p{Cc}", "");
         if (decodedUsername.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
