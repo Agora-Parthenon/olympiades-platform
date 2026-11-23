@@ -11,6 +11,7 @@ public final class ControllerPaths {
     public static final String INFO = "/info";
     public static final String PROFILES = "/profiles";
     public static final String ME = "/me";
+    public static final String AVATARS = "/avatars";
 
     // Identity of the caller, set by the gateway from the verified token
     public static final String USER_ID_HEADER = "X-User-Id";

@@ -23,6 +23,9 @@ public class Profile {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Column(length = 30)
+    private String avatar;
+
     protected Profile() {
     }
 
@@ -37,6 +40,15 @@ public class Profile {
 
     public String getPseudo() {
         return pseudo;
+    }
+
+    public String getAvatar() {
+        return avatar;
+    }
+
+    public void update(String pseudo, String avatar) {
+        this.pseudo = pseudo;
+        this.avatar = avatar;
     }
 
     public Instant getCreatedAt() {

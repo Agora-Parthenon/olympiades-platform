@@ -2,6 +2,13 @@ package org.olympiades.platform.service;
 
 import java.util.UUID;
 
+import java.util.regex.Pattern;
+
+import org.olympiades.platform.exception.InvalidProfileException;
+import org.olympiades.platform.exception.ProfileNotFoundException;
+import org.olympiades.platform.exception.PseudoAlreadyUsedException;
+import org.olympiades.platform.kafka.UserEventPublisher;
+import org.olympiades.platform.model.Avatars;
 import org.olympiades.platform.model.Profile;
 import org.olympiades.platform.model.User;
 import org.olympiades.platform.repository.ProfileRepository;
@@ -15,6 +22,7 @@ public class ProfileService {
 
     static final int MAX_PSEUDO_LENGTH = 50;
     private static final int SUFFIX_LENGTH = 6;
+    private static final Pattern PSEUDO_PATTERN = Pattern.compile("[A-Za-z0-9-]{3,20}");
 
     /** The profile, and whether this very call created it. */
     public record EnsuredProfile(Profile profile, boolean created) {
@@ -23,12 +31,57 @@ public class ProfileService {
     private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
     private final TransactionTemplate transaction;
+    private final UserEventPublisher events;
 
     public ProfileService(UserRepository userRepository, ProfileRepository profileRepository,
-            TransactionTemplate transaction) {
+            TransactionTemplate transaction, UserEventPublisher events) {
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
         this.transaction = transaction;
+        this.events = events;
+    }
+
+    public Profile getProfile(UUID userId) {
+        return profileRepository.findById(userId).orElseThrow(ProfileNotFoundException::new);
+    }
+
+    /**
+     * Changes the pseudo and the avatar of a player. A pseudo is 3 to 20 letters, digits or
+     * hyphens, and unique whatever the case. The games are told when the pseudo changes.
+     */
+    public Profile updateProfile(UUID userId, String pseudo, String avatar) {
+        String newPseudo = pseudo == null ? "" : pseudo.strip();
+        if (!PSEUDO_PATTERN.matcher(newPseudo).matches()) {
+            throw new InvalidProfileException("invalid_pseudo",
+                    "The pseudo must have 3 to 20 letters, digits or hyphens");
+        }
+        if (avatar != null && !Avatars.isValid(avatar)) {
+            throw new InvalidProfileException("invalid_avatar", "Unknown avatar: " + avatar);
+        }
+
+        String[] oldPseudo = new String[1];
+        Profile saved;
+        try {
+            saved = transaction.execute(status -> {
+                Profile profile = getProfile(userId);
+                oldPseudo[0] = profile.getPseudo();
+                boolean takenByAnother = !oldPseudo[0].equalsIgnoreCase(newPseudo)
+                        && profileRepository.existsByPseudoIgnoreCase(newPseudo);
+                if (takenByAnother) {
+                    throw new PseudoAlreadyUsedException(newPseudo);
+                }
+                profile.update(newPseudo, avatar);
+                return profileRepository.saveAndFlush(profile);
+            });
+        } catch (DataIntegrityViolationException e) {
+            // Someone took the same pseudo between the check and the save
+            throw new PseudoAlreadyUsedException(newPseudo);
+        }
+
+        if (!oldPseudo[0].equals(newPseudo)) {
+            events.pseudoChanged(userId, oldPseudo[0], newPseudo);
+        }
+        return saved;
     }
 
     /**
@@ -62,7 +115,7 @@ public class ProfileService {
      */
     private String availablePseudo(UUID userId, String pseudo) {
         String candidate = pseudo.length() > MAX_PSEUDO_LENGTH ? pseudo.substring(0, MAX_PSEUDO_LENGTH) : pseudo;
-        if (!profileRepository.existsByPseudo(candidate)) {
+        if (!profileRepository.existsByPseudoIgnoreCase(candidate)) {
             return candidate;
         }
         String suffix = "-" + userId.toString().substring(0, SUFFIX_LENGTH);
