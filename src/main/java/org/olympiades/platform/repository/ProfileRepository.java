@@ -7,5 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ProfileRepository extends JpaRepository<Profile, UUID> {
 
-    boolean existsByPseudo(String pseudo);
+    boolean existsByPseudoIgnoreCase(String pseudo);
 }
